@@ -360,7 +360,7 @@ app.add_handler(CommandHandler("download_template", download_template))
 def run_bot():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(app.run_polling())
+    loop.run_until_complete(app.run_polling(stop_signals=None))
 
 
 # Start thread only once
