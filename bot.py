@@ -1,5 +1,5 @@
 import sqlite3
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Document
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Document, InputFile
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 
 from dotenv import load_dotenv
@@ -297,6 +297,23 @@ async def upload_material_file(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(f"✅ Inserted: {inserted} materials\n❌ Failed: {failed} lines")
 
 
+async def download_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMINS:
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    template_content = (
+        "CourseCode | Title | DriveLink | Type | Year | Semester\n"
+        "CS101 | Intro to CS | https://drive.google.com/link1 | notes | 1 | 1\n"
+        "CS102 | Data Structures | https://drive.google.com/link2 | notes | 1 | 2\n"
+    )
+
+    with open("material_template.txt", "w", encoding="utf-8") as f:
+        f.write(template_content)
+
+    await update.message.reply_document(document=InputFile("material_template.txt"), filename="material_template.txt")
+
 
 # Main application
 app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -310,4 +327,5 @@ app.add_handler(CommandHandler("notes", notes))
 app.add_handler(CommandHandler("papers", papers))
 app.add_handler(CommandHandler("addmaterial", add_material))
 app.add_handler(CommandHandler("bulkupload", upload_material_file))
+app.add_handler(CommandHandler("download_template", download_template))
 app.run_polling()
