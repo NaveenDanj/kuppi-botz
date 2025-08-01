@@ -1,7 +1,7 @@
 import io
 import sqlite3
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Document, InputFile
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 from util import isAdmin
 import threading
 import streamlit as st
@@ -14,6 +14,7 @@ import os
 load_dotenv()
 BOT_TOKEN = os.getenv("TOKEN")
 admin_ids_str = os.getenv("ADMINS", "")
+admin_waiting_for_upload = set()
 
 # get user ids from @userinfobot
 ADMINS = [int(admin_id.strip()) for admin_id in admin_ids_str.split(",") if admin_id.strip()]
@@ -151,7 +152,7 @@ async def notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     query = """
     SELECT DISTINCT title, drive_link FROM materials
-    WHERE UPPER(course) LIKE ? AND type = 'notes' AND year = ? AND semester = ?
+    WHERE course LIKE ? AND type = 'notes' AND year = ? AND semester = ?
     """
     like_pattern = f"%{course}%"
     c.execute(query, (like_pattern,year , semester))
@@ -278,20 +279,35 @@ async def add_material(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Failed to add material: {e}")
 
 
+
 async def upload_material_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in ADMINS:
         await update.message.reply_text("❌ You are not authorized to perform this action.")
         return
 
+    admin_waiting_for_upload.add(user_id)
+    await update.message.reply_text("📄 Please send the .txt file now.")
+    
+    
+    
+async def handle_uploaded_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in admin_waiting_for_upload:
+        return  # Ignore if not expecting file upload
+
     document: Document = update.message.document
     if not document or not document.file_name.endswith('.txt'):
-        await update.message.reply_text("📄 Please upload a .txt file.")
+        await update.message.reply_text("❌ Invalid file. Please upload a .txt file.")
         return
 
-    file = await document.get_file()
-    file_content = await file.download_as_bytearray()
-    text = file_content.decode('utf-8')
+    try:
+        file = await document.get_file()
+        file_content = await file.download_as_bytearray()
+        text = file_content.decode('utf-8')
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to download file: {e}")
+        return
 
     conn = sqlite3.connect('materials.db')
     c = conn.cursor()
@@ -314,12 +330,13 @@ async def upload_material_file(update: Update, context: ContextTypes.DEFAULT_TYP
     conn.commit()
     conn.close()
 
+    admin_waiting_for_upload.remove(user_id)
     await update.message.reply_text(f"✅ Inserted: {inserted} materials\n❌ Failed: {failed} lines")
+
 
 
 async def download_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    print("user id is --->", user_id)
 
     if user_id not in ADMINS:
         await update.message.reply_text("❌ You are not authorized to use this command.")
@@ -353,6 +370,8 @@ app.add_handler(CommandHandler("notes", notes))
 app.add_handler(CommandHandler("papers", papers))
 app.add_handler(CommandHandler("add_material", add_material))
 app.add_handler(CommandHandler("bulk_upload", upload_material_file))
+app.add_handler(MessageHandler(filters.Document.ALL, handle_uploaded_file))
+
 app.add_handler(CommandHandler("download_template", download_template))
 
 
