@@ -3,6 +3,10 @@ import sqlite3
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Document, InputFile
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 from util import isAdmin
+import threading
+import streamlit as st
+import asyncio
+import os
 
 from dotenv import load_dotenv
 import os
@@ -350,4 +354,21 @@ app.add_handler(CommandHandler("papers", papers))
 app.add_handler(CommandHandler("add_material", add_material))
 app.add_handler(CommandHandler("bulk_upload", upload_material_file))
 app.add_handler(CommandHandler("download_template", download_template))
-app.run_polling()
+
+
+# Thread target
+def run_bot():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(app.run_polling())
+
+
+# Start thread only once
+if 'bot_started' not in st.session_state:
+    st.session_state.bot_started = True
+    threading.Thread(target=run_bot, daemon=True).start()
+    st.success("✅ Telegram bot is running in the background!")
+
+# Your Streamlit UI
+st.title("📡 UniNotes Telegram Bot Monitor")
+st.write("The Telegram bot is now active and polling messages.")
