@@ -1,15 +1,18 @@
+import io
 import sqlite3
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Document, InputFile
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
+from util import isAdmin
 
 from dotenv import load_dotenv
 import os
 
 load_dotenv()
 BOT_TOKEN = os.getenv("TOKEN")
+admin_ids_str = os.getenv("ADMINS", "")
 
 # get user ids from @userinfobot
-ADMINS = ['7709496043']
+ADMINS = [int(admin_id.strip()) for admin_id in admin_ids_str.split(",") if admin_id.strip()]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('''Welcome to UniNotes — your personal hub for smarter studying!
@@ -73,21 +76,34 @@ async def handle_semester_selection(update: Update, context: ContextTypes.DEFAUL
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = """
+    user_id = update.effective_user.id
+
+    base_help = """
 📚 *UniNotes — Command Reference*
 
-    🔹 `/start` — Begin setup and select your year and semester  
-    🔹 `/help` — Show this help message  
-    🔹 `/search <keyword>` — Search for any material by course code or title  
-    🔹 `/notes <course>` — Get all notes for a course (e.g., `/notes CS101`)  
-    🔹 `/papers <course>` — Get past papers for a course (e.g., `/papers CS101`)  
+🔹 `/start` — Begin setup and select your year and semester  
+🔹 `/help` — Show this help message  
+🔹 `/search <keyword>` — Search for any material by course code or title  
+🔹 `/notes <course>` — Get all notes for a course (e.g., `/notes CS101`)  
+🔹 `/papers <course>` — Get past papers for a course (e.g., `/papers CS101`)  
 
-    ❗ *Make sure to use /start first to select your year and semester.*
+❗ *Make sure to use /start first to select your year and semester.*
 
-    More features coming soon. Stay tuned! 🚀
-    """
-    await update.message.reply_text(help_text, parse_mode='Markdown')
-    
+More features coming soon. Stay tuned! 🚀
+"""
+
+    admin_help = """
+👑 *Admin Commands:*
+🔸 `/add_material` — Add a new course material manually  
+🔸 `/bulk_upload` — Upload a text file with multiple materials  
+🔸 `/download_template` — Get the text file template for bulk uploads  
+"""
+
+    help_text = base_help
+    if isAdmin(user_id):
+        help_text += admin_help
+
+    await update.message.reply_text(help_text, parse_mode='Markdown') 
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -299,20 +315,26 @@ async def upload_material_file(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def download_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    print("user id is --->", user_id)
+
     if user_id not in ADMINS:
         await update.message.reply_text("❌ You are not authorized to use this command.")
         return
 
+    # File content
     template_content = (
         "CourseCode | Title | DriveLink | Type | Year | Semester\n"
         "CS101 | Intro to CS | https://drive.google.com/link1 | notes | 1 | 1\n"
         "CS102 | Data Structures | https://drive.google.com/link2 | notes | 1 | 2\n"
     )
 
-    with open("material_template.txt", "w", encoding="utf-8") as f:
-        f.write(template_content)
+    # Write to in-memory buffer
+    file_buffer = io.BytesIO(template_content.encode('utf-8'))
+    file_buffer.name = "material_template.txt"
 
-    await update.message.reply_document(document=InputFile("material_template.txt"), filename="material_template.txt")
+    # Send as document
+    await update.message.reply_document(document=InputFile(file_buffer))
+
 
 
 # Main application
@@ -325,7 +347,7 @@ app.add_handler(CommandHandler("search", search))
 app.add_handler(CommandHandler("help", help_command))
 app.add_handler(CommandHandler("notes", notes))
 app.add_handler(CommandHandler("papers", papers))
-app.add_handler(CommandHandler("addmaterial", add_material))
-app.add_handler(CommandHandler("bulkupload", upload_material_file))
+app.add_handler(CommandHandler("add_material", add_material))
+app.add_handler(CommandHandler("bulk_upload", upload_material_file))
 app.add_handler(CommandHandler("download_template", download_template))
 app.run_polling()
